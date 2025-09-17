@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+  <munit:config name="munit"/>
+
+  <ee:transform doc:name="Vars: address rows">
+    <ee:message>
+      <ee:set-payload><![CDATA[%dw 2.0
+output application/json --- {}]]></ee:set-payload>
+    </ee:message>
+    <ee:variables>
+      <ee:set-variable variableName="spRows"><![CDATA[%dw 2.0
+output application/java
+---
+{ resultSet1: [
+  { addrLine1: "123 Main", addrLine2: null, addrLine3: null, city: "Austin", county: "Travis", state: "TX", zip: "78701" },
+  { addrLine1: "500 Oak",  addrLine2: null, addrLine3: null, city: "Dallas", county: "Dallas", state: "TX", zip: "75001" }
+] }]]></ee:set-variable>
+      <ee:set-variable variableName="spEmpty"><![CDATA[%dw 2.0
+output application/java --- { resultSet1: [] }]]></ee:set-variable>
+      <ee:set-variable variableName="consumerAddrOk"><![CDATA[%dw 2.0
+output application/java
+---
+{ data: { address: { addrLine1: "123 Main", addrLine2: null, addrLine3: null, city: "Austin", county: "Travis", state: "TX", zip: "78701" } } }]]></ee:set-variable>
+      <ee:set-variable variableName="consumerAddrNull"><![CDATA[%dw 2.0
+output application/java --- { data: { address: null } }]]></ee:set-variable>
+      <ee:set-variable variableName="dbExists"><![CDATA[%dw 2.0
+output application/java --- [{ cnsmr_idntfr_agncy_id: "12345" }]]]></ee:set-variable>
+    </ee:variables>
+  </ee:transform>
+
+  <munit:test name="get_address__blank_consumer_id">
+    <munit:execution>
+      <flow-ref name="get-address">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ uriParams: { cnsmr_agncy_id: '' } }]"/>
+        </munit:with-attributes>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-error type="REQUEST:BLANK_CONSUMER"/>
+      <munit:verify-call processor="db:select" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="get_address__non_numeric_consumer_id">
+    <munit:execution>
+      <flow-ref name="get-address">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ uriParams: { cnsmr_agncy_id: '12A45' } }]"/>
+        </munit:with-attributes>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-that expression="# [payload.status.code]" is="# [equalTo(400)]"/>
+      <munit:verify-call processor="db:select" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="get_address__consumer_not_found">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="# [[]]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="get-address">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ uriParams: { cnsmr_agncy_id: '12345' } }]"/>
+        </munit:with-attributes>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-that expression="# [payload.status.code]" is="# [equalTo(204)]"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="get_address__success_with_primary">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="# [vars.dbExists]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="flow-ref">
+        <munit:with-attributes>
+          <munit:attribute name="name" whereValue="# ['dm-get-consumer-address']"/>
+        </munit:with-attributes>
+        <munit:then-return payload="# [vars.consumerAddrOk]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="db:stored-procedure">
+        <munit:then-return payload="# [vars.spRows]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="get-address">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ uriParams: { cnsmr_agncy_id: '12345' } }]"/>
+        </munit:with-attributes>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-that expression="# [payload.status.code]" is="# [equalTo(200)]"/>
+      <munit:assert-that expression="# [sizeOf(payload.data)]" is="# [equalTo(2)]"/>
+      <munit:assert-that expression="# [(payload.data[0].isPrimary default 'false')]" is="# [equalTo('true')]"/>
+      <munit:assert-that expression="# [(payload.data[1].isPrimary default 'false')]" is="# [equalTo('false')]"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="get_address__success_no_primary">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="# [vars.dbExists]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="flow-ref">
+        <munit:with-attributes>
+          <munit:attribute name="name" whereValue="# ['dm-get-consumer-address']"/>
+        </munit:with-attributes>
+        <munit:then-return payload="# [vars.consumerAddrNull]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="db:stored-procedure">
+        <munit:then-return payload="# [vars.spRows]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="get-address">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ uriParams: { cnsmr_agncy_id: '12345' } }]"/>
+        </munit:with-attributes>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-that expression="# [payload.status.code]" is="# [equalTo(200)]"/>
+      <munit:assert-that expression="# [sizeOf(payload.data)]" is="# [equalTo(2)]"/>
+      <munit:assert-that expression="# [(payload.data[0].isPrimary default 'false')]" is="# [equalTo('false')]"/>
+      <munit:assert-that expression="# [(payload.data[1].isPrimary default 'false')]" is="# [equalTo('false')]"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="get_address__empty_address_list">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="# [vars.dbExists]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="flow-ref">
+        <munit:with-attributes>
+          <munit:attribute name="name" whereValue="# ['dm-get-consumer-address']"/>
+        </munit:with-attributes>
+        <munit:then-return payload="# [vars.consumerAddrOk]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="db:stored-procedure">
+        <munit:then-return payload="# [vars.spEmpty]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="get-address">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ uriParams: { cnsmr_agncy_id: '12345' } }]"/>
+        </munit:with-attributes>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-that expression="# [payload.status.code]" is="# [equalTo(204)]"/>
+      <munit:assert-that expression="# [payload.data]" is="# [nullValue()]"/>
+    </munit:validation>
+  </munit:test>
+
+</mule>
+

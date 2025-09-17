@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+    xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+    xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+  <flow name="get-address" doc:id="get-address">
+    <set-variable value="#[attributes.uriParams.cnsmr_agncy_id]" doc:name="Set Consumer Agency ID" variableName="cnsmr_agncy_id"/>
+    <choice>
+      <when expression='#[vars.cnsmr_agncy_id != null and trim(vars.cnsmr_agncy_id) != ""]'>
+        <validation:matches-regex doc:name="Checks consumer agency ID is numeric" value="#[vars.cnsmr_agncy_id]" regex="^\\d+$" message="Consumer Agency ID must be numeric">
+          <error-mapping targetType="REQUEST:NON_NUMERIC"/>
+        </validation:matches-regex>
+      </when>
+      <otherwise>
+        <raise-error type="REQUEST:BLANK_CONSUMER"/>
+      </otherwise>
+    </choice>
+
+    <!-- Mocked in tests -->
+    <db:select doc:name="Check Consumer Agency ID in Database" config-ref="AGL_DM_Database_Config" target="dbResult">
+      <db:sql><![CDATA[select  c.cnsmr_idntfr_agncy_id from cnsmr_addrss ca  join cnsmr c
+on ca.cnsmr_id = c.cnsmr_id
+where c.cnsmr_idntfr_agncy_id = :consumerId]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ "consumerId": vars.cnsmr_agncy_id }]]]></db:input-parameters>
+    </db:select>
+
+    <choice>
+      <when expression="#[_isEmpty(vars.dbResult)]">
+        <raise-error type='REQUEST:CONSUMER_NOT_FOUND'/>
+      </when>
+      <otherwise>
+        <set-payload value="#[vars.dbResult]"/>
+      </otherwise>
+    </choice>
+
+    <scatter-gather>
+      <route>
+        <try>
+          <flow-ref name="dm-get-consumer-address" target="consumerAddressRM"/>
+        </try>
+        <set-variable value="#[vars.consumerAddressRM.data]" variableName="consumerAddress"/>
+      </route>
+      <route>
+        <db:stored-procedure doc:name="Stored procedure" config-ref="AGL_NDM_Database_Config" target="addressList">
+          <db:sql><![CDATA[{call [dbo].[USP_RETRIEVE_DE_DUPE_ADDRESS] (:consumerId)}]]></db:sql>
+          <db:input-parameters><![CDATA[#[{ "consumerId": vars.cnsmr_agncy_id }]]]></db:input-parameters>
+        </db:stored-procedure>
+      </route>
+    </scatter-gather>
+
+    <!-- Always build list; isPrimary only true if a primary exists and matches -->
+    <ee:transform doc:name="Build Address List Payload">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+import update from dw::util::Values
+output application/json
+fun checkAddressLine(addr, pri) =
+    addr.addrLine1 == pri.addrLine1 and
+    addr.addrLine2 == pri.addrLine2 and
+    addr.addrLine3 == pri.addrLine3
+fun checkCityWithCounty(addr, pri) =
+    addr.city == pri.city and
+    addr.county == pri.county
+fun checkStateWithZip(addr, pri) =
+    addr.state == pri.state and
+    addr.zip == pri.zip
+var pri = (vars.consumerAddress default { address: null }).address
+---
+((vars.addressList.resultSet1) default []) map ((addr) ->
+  if (pri != null
+      and checkAddressLine(addr, pri)
+      and checkCityWithCounty(addr, pri)
+      and checkStateWithZip(addr, pri))
+     addr ++ { isPrimary: "true" }
+  else
+     addr ++ { isPrimary: "false" }
+)]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <validation:is-not-null value="#[payload]" message="Address list is null for consumer">
+      <error-mapping targetType="REQUEST:ADDRESS_LIST_NULL"/>
+    </validation:is-not-null>
+    <validation:is-not-empty-collection message="Address List is Empty for Consumer">
+      <error-mapping targetType="REQUEST:ADDRESS_LIST_EMPTY"/>
+    </validation:is-not-empty-collection>
+
+    <ee:transform doc:name="Set Response">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  status: { code: 200, message: "Request has been processed successfully", uniqueErrorId: null, messageCode: "S200" },
+  data: payload,
+  custom: {},
+  timestamp: now() >> "UTC"
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler>
+      <on-error-propagate type="REQUEST:BLANK_CONSUMER"/>
+      <on-error-propagate type="REQUEST:ADDRESS_LIST_NULL"/>
+      <on-error-propagate type="COMPOSITE_ROUTING"/>
+      <on-error-continue type="REQUEST:ADDRESS_LIST_EMPTY"/>
+      <on-error-continue type="REQUEST:CONSUMER_NOT_FOUND"/>
+      <on-error-continue type="REQUEST:NON_NUMERIC"/>
+    </error-handler>
+  </flow>
+
+</mule>
+

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.terry</groupId>
+  <artifactId>workTest</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>mule-application</packaging>
+  <name>workTest</name>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <mule.maven.plugin.version>3.5.3</mule.maven.plugin.version>
+    <munit.version>2.3.16</munit.version>
+    <mule.runtime.version>4.5.5</mule.runtime.version>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.8.1</version>
+        <configuration>
+          <source>${maven.compiler.source}</source>
+          <target>${maven.compiler.target}</target>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.mule.tools.maven</groupId>
+        <artifactId>mule-maven-plugin</artifactId>
+        <version>${mule.maven.plugin.version}</version>
+        <extensions>true</extensions>
+        <configuration>
+          <classifier>mule-application</classifier>
+          <muleVersion>${mule.runtime.version}</muleVersion>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>com.mulesoft.munit</groupId>
+        <artifactId>munit-maven-plugin</artifactId>
+        <version>${munit.version}</version>
+        <executions>
+          <execution>
+            <id>test</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <!-- Note: Mule enterprise repos often require credentials; run tests in Anypoint Studio or with configured settings.xml -->
+</project>
+
