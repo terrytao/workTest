@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+                xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+                xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+                                <flow name="put-cnsmr-addrss" doc:id="0abc0c4e-21d7-4377-b9bc-0e2c9759c048" >
+                                <set-variable value="#[attributes.queryParams.txsummary as Boolean default true]" doc:name="Set txsummary" doc:id="f8406bfd-823b-4cae-beba-dd3d80ccfb1e" variableName="txsummary" />
+                                <choice doc:name="Choice" doc:id="c5c43468-8f2a-4434-a7e6-93c04c57a358" >
+                                                <when expression="#[payload.'@metadata' != null]">
+                                                                <ee:transform doc:name="Transform Message" doc:id="5e696a44-fde8-41e2-aa7b-f706ad68bc39">
+                                                                                <ee:message>
+                                                                                </ee:message>
+                                                                                <ee:variables >
+                                                                                                <ee:set-variable variableName="cnsmr_addrss_id" ><![CDATA[%dw 2.0
+output application/java
+var url = (payload.'@metadata'.href default "") splitBy (/[\/]/)
+---
+url[sizeOf(url) - 1]]]></ee:set-variable>
+                                                                                </ee:variables>
+                                                                </ee:transform>
+                                                                <validation:is-true doc:name="Is true" doc:id="182c4224-ef24-4678-9bec-1b782cc89e65" expression='#[vars.cnsmr_addrss_id != null and vars.cnsmr_addrss_id != "" and (vars.cnsmr_addrss_id matches(/[0-9]+/))]'>
+                                                                                <error-mapping targetType="REQUEST:NO_ID" />
+                                                                </validation:is-true>
+                                                </when>
+                                                <otherwise >
+                                                                <set-variable value="#[payload.cnsmr_addrss_id]" doc:name="Set Consumer Address Id" doc:id="3dc676a0-24dd-432f-bcdc-5a3a4928bd59" variableName="cnsmr_addrss_id" />
+                                                                <validation:is-not-null doc:name="Is not null" doc:id="fca5a097-bd27-47a6-a719-27946be0b0ff" value="#[payload.cnsmr_addrss_id]" />
+                                                                <validation:is-number doc:name="Is number" doc:id="c0e7eca5-c01b-4ff6-ba82-1e4ee2a419bd" value="#[payload.cnsmr_addrss_id]" numberType="LONG" />
+                                                </otherwise>
+                                </choice>
+                                <validation:is-true doc:name="Not Only ID" doc:id="696f0e43-55f8-4ced-abb1-0c252d3424c9" expression="#[sizeOf(namesOf(payload)) != 1]">
+                                                <error-mapping targetType="REQUEST:ONLY_CONTAINS_ID" />
+                                </validation:is-true>
+                                <set-variable value="#[%dw 2.0\nimport substring from dw::core::Strings\nvar out = ((filter(map(entriesOf(payload), (entry, index) -> (\n if (!(entry.key ~= \"cnsmr_addrss_id\" or entry.key ~= \"@metadata\"))\n                           if (entry.value == null)\n                                     entry.key ++ \" = NULL\"\n                     else\n                                                entry.key ++ \" = '\" ++ entry.value ++ \"'\"\n        else\n                                null\n)), (entry, index) -> entry != null) joinBy \", \"))\n---\nif (out startsWith(\", \"))\n    substring(out, 2, sizeOf(out))\nelse\n          out]" doc:name="Set Update Columns" doc:id="73311506-3bf9-4da7-8a91-694e90579e0d" variableName="columns" />
+                                <db:select doc:name="Select" doc:id="4ce5ff24-b7fe-45f4-96c6-735dd787f3b7" config-ref="AGL_DM_Database_Config">
+                                                                                <db:sql><![CDATA[SELECT * FROM cnsmr_addrss where cnsmr_addrss_id = :cnsmr_addrss_id]]></db:sql>
+                                                                                <db:input-parameters><![CDATA[#[{
+                "cnsmr_addrss_id": vars.cnsmr_addrss_id
+}]]]></db:input-parameters>
+                                                                </db:select>
+                                <validation:is-true doc:name="Matching ID" doc:id="d5ca27e5-1cb8-4bb5-af4b-02c1ddbb3a7c" expression="#[sizeOf(payload) != 0]">
+                                                                                <error-mapping targetType="REQUEST:NO_MATCHING_ID" />
+                                                                </validation:is-true>
+                                <set-variable value="#[payload]" doc:name="Set Initial Data" doc:id="5e20c86a-1c6b-4d5d-a680-c53b7f54d80e" variableName="initialData" />
+                                <db:update doc:name="Update" doc:id="94697679-92ce-4bbf-a55d-8335f9194a8d" config-ref="AGL_DM_Database_Config">
+                                                                                <db:sql><![CDATA[# ["UPDATE cnsmr_addrss SET " ++ vars.columns ++ " WHERE cnsmr_addrss_id = " ++ vars.cnsmr_addrss_id]]]></db:sql>
+                                                                </db:update>
+                                <db:select doc:name="Select" doc:id="7e50f393-1ada-4586-a8b8-9d19bb55f81d" config-ref="AGL_DM_Database_Config">
+                                                                                <db:sql><![CDATA[SELECT * FROM cnsmr_addrss where cnsmr_addrss_id = :cnsmr_addrss_id]]></db:sql>
+                                                                                <db:input-parameters><![CDATA[#[{
+                "cnsmr_addrss_id": vars.cnsmr_addrss_id
+}]]]></db:input-parameters>
+                                                                </db:select>
+                                <ee:transform doc:name="Transform Message" doc:id="d736cba7-9a70-4fd1-93b2-46c3d23db712">
+                                                                                <ee:message>
+                                                                                                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+if (vars.txsummary)
+                if (payload != vars.initialData)
+                                {
+                                    "statusCode": 200,
+                                    "txsummary": map(payload, (entry, index) -> (
+                                                {
+                                                                "@metadata": {
+                                                "href": p("host") ++ "/cnsmr_addrss/" ++ vars.cnsmr_addrss_id,
+                                                "resource": "cnsmr_addrss",
+                                                "verb": "UPDATE"
+                                            }
+                                                } ++ entry
+                                    ))
+                                }
+                else
+                                {
+                                    "statusCode": 200,
+                                    "txsummary": []
+                                }
+else
+                {
+                                "statusCode": 200
+                }]]></ee:set-payload>
+                                                                                </ee:message>
+                                                                </ee:transform>
+                                <error-handler >
+                                                <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="d8079dac-c593-436c-b4e0-901e064de060" type="VALIDATION:NULL, REQUEST:NO_ID">
+                                                                <set-variable value="404" doc:name="Set Variable" doc:id="cdb8fc5e-3073-45fc-8962-7b702f190a79" variableName="statusCode"/>
+                                                                <set-variable value='#[{"statusCode": 404, "errorCode": 4045, "errorMessage": "No such object: dmia:cnsmr_addrss (dmia:cnsmr_addrss[{}]) in resource cnsmr_addrss, subresource cnsmr_addrss"}]' doc:name="Set Variable" doc:id="9645b2cc-c3e8-4717-b9d9-cf1025bdb0c9" variableName="errorMessage" />
+                                                </on-error-propagate>
+                                                <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="775ab65b-7963-4668-ad22-7304e0620c27" type="REQUEST:NO_MATCHING_ID">
+                                                                <set-variable value="404" doc:name="Set Variable" doc:id="3240b7d9-4efe-4a70-945b-fa5b9d518f69" variableName="statusCode" />
+                                                                <set-variable value='#[%dw 2.0\nimport toString from dw::util::Coercions\n---\n{"statusCode": 404, "errorCode": 4045, "errorMessage": "No such object: dmia:cnsmr_addrss (dmia:cnsmr_addrss[{cnsmr_addrss_id=" ++ toString(vars.cnsmr_addrss_id as Number) ++ "}]) in resource cnsmr_addrss, subresource cnsmr_addrss"}]' doc:name="Set Variable" doc:id="aa87b104-b80c-4ae4-b3ee-f8f7c7940b9b" variableName="errorMessage" />
+                                                </on-error-propagate>
+                                                <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="402575fb-bb2e-4e3c-8afd-b4f6ce06756a" type="VALIDATION:INVALID_NUMBER">
+                                                                <set-variable value="400" doc:name="Set Variable" doc:id="791d8ccf-54be-4449-9208-6126ce92cecc" variableName="statusCode" />
+                                                                <set-variable value='#[{"statusCode": 400, "message": "cnsmr_addrss_id must be numeric"}]' doc:name="Set Variable" doc:id="d3a43dc3-ab1b-434c-9f47-1e9bce6c2321" variableName="errorMessage" />
+                                                </on-error-propagate>
+                                                <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="4fa607b9-5557-4090-9a77-e7ef6048765b" type="REQUEST:ONLY_CONTAINS_ID">
+                                                                <set-variable value="200" doc:name="Set Variable" doc:id="acff9dfd-334d-45e8-8f97-55234e845198" variableName="statusCode" />
+                                                                <set-variable value='#[if (vars.txsummary)\n{\n    "statusCode": 200,\n    "txsummary": []\n}\nelse\n{\n             "statusCode": 200\n}]' doc:name="Set Variable" doc:id="b9301750-1f5b-4098-a9a0-e5d27fe7326e" variableName="errorMessage" />
+                                                </on-error-propagate>
+                                </error-handler>
+                </flow>
+               
+</mule>
+

@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+  <munit:config name="munit"/>
+
+  <ee:transform doc:name="Vars: rows">
+    <ee:message>
+      <ee:set-payload><![CDATA[%dw 2.0
+output application/json --- {}]]></ee:set-payload>
+    </ee:message>
+    <ee:variables>
+      <ee:set-variable variableName="initialRows"><![CDATA[%dw 2.0
+output application/java --- [ { cnsmr_addrss_id: 100, addrLine1: "123 Main" } ]]]></ee:set-variable>
+      <ee:set-variable variableName="updatedRows"><![CDATA[%dw 2.0
+output application/java --- [ { cnsmr_addrss_id: 100, addrLine1: "999 New" } ]]]></ee:set-variable>
+      <ee:set-variable variableName="emptyRows"><![CDATA[%dw 2.0
+output application/java --- []]]></ee:set-variable>
+    </ee:variables>
+  </ee:transform>
+
+  <munit:test name="put_cnsmr_addrss__success_txsummary_true_changed">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="#[vars.initialRows]"/>
+        <munit:then-return payload="#[vars.updatedRows]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="db:update">
+        <munit:then-return payload="#[{}]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ queryParams: { txsummary: 'true' } }]"/>
+        </munit:with-attributes>
+        <munit:with-payload value="#[{ '@metadata': { href: 'http://x/cnsmr_addrss/100' }, addrLine1: '999 New' }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-that expression="#[payload.statusCode]" is="#[equalTo(200)]"/>
+      <munit:assert-that expression="#[sizeOf(payload.txsummary)]" is="#[equalTo(1)]"/>
+      <munit:verify-call processor="db:update" times="1"/>
+      <munit:verify-call processor="db:select" times="2"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="put_cnsmr_addrss__success_txsummary_true_no_change">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="#[vars.initialRows]"/>
+        <munit:then-return payload="#[vars.initialRows]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="db:update">
+        <munit:then-return payload="#[{}]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ queryParams: { txsummary: 'true' } }]"/>
+        </munit:with-attributes>
+        <munit:with-payload value="#[{ '@metadata': { href: 'http://x/cnsmr_addrss/100' }, addrLine1: '123 Main' }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-that expression="#[payload.statusCode]" is="#[equalTo(200)]"/>
+      <munit:assert-that expression="#[sizeOf(payload.txsummary)]" is="#[equalTo(0)]"/>
+      <munit:verify-call processor="db:update" times="1"/>
+      <munit:verify-call processor="db:select" times="2"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="put_cnsmr_addrss__success_txsummary_false">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="#[vars.initialRows]"/>
+        <munit:then-return payload="#[vars.updatedRows]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="db:update">
+        <munit:then-return payload="#[{}]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-attributes>
+          <munit:attributes value="#[{ queryParams: { txsummary: 'false' } }]"/>
+        </munit:with-attributes>
+        <munit:with-payload value="#[{ '@metadata': { href: 'http://x/cnsmr_addrss/100' }, addrLine1: '999 New' }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-that expression="#[payload.statusCode]" is="#[equalTo(200)]"/>
+      <munit:assert-that expression="#[payload.txsummary]" is="#[nullValue()]"/>
+      <munit:verify-call processor="db:update" times="1"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="put_cnsmr_addrss__error_no_id_from_metadata">
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-payload value="#[{ '@metadata': { href: 'http://x/cnsmr_addrss/abc' }, addrLine1: 'Any' }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-error type="REQUEST:NO_ID"/>
+      <munit:verify-call processor="db:select" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="put_cnsmr_addrss__error_null_id_payload">
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-payload value="#[{ cnsmr_addrss_id: null, addrLine1: 'Any' }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-error type="VALIDATION:NULL"/>
+      <munit:verify-call processor="db:select" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="put_cnsmr_addrss__error_invalid_number_payload">
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-payload value="#[{ cnsmr_addrss_id: 'abc', addrLine1: 'Any' }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-error type="VALIDATION:INVALID_NUMBER"/>
+      <munit:verify-call processor="db:select" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="put_cnsmr_addrss__error_only_contains_id">
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-payload value="#[{ cnsmr_addrss_id: 100 }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-error type="REQUEST:ONLY_CONTAINS_ID"/>
+      <munit:verify-call processor="db:select" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="put_cnsmr_addrss__error_no_matching_id">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="#[vars.emptyRows]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-payload value="#[{ cnsmr_addrss_id: 999, addrLine1: 'Any' }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:assert-error type="REQUEST:NO_MATCHING_ID"/>
+      <munit:verify-call processor="db:update" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="put_cnsmr_addrss__columns_sanity_and_update_once">
+    <munit:behavior>
+      <munit:mock-when processor="db:select">
+        <munit:then-return payload="#[vars.initialRows]"/>
+        <munit:then-return payload="#[vars.updatedRows]"/>
+      </munit:mock-when>
+      <munit:mock-when processor="db:update">
+        <munit:then-return payload="#[{}]"/>
+      </munit:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="put-cnsmr-addrss">
+        <munit:with-payload value="#[{ cnsmr_addrss_id: 100, '@metadata': { href: 'http://x/cnsmr_addrss/100' }, addrLine1: '999 New', someNullField: null }]"/>
+      </flow-ref>
+    </munit:execution>
+    <munit:validation>
+      <munit:verify-call processor="db:update" times="1"/>
+      <munit:assert-that expression="#[vars.columns]" is="#[containsString('addrLine1 = \'999 New\'')]"/>
+      <munit:assert-that expression="#[vars.columns]" is="#[containsString('someNullField = NULL')]"/>
+      <munit:assert-that expression="#[vars.columns]" is="#[not(containsString('cnsmr_addrss_id'))]"/>
+      <munit:assert-that expression="#[vars.columns]" is="#[not(containsString('@metadata'))]"/>
+    </munit:validation>
+  </munit:test>
+
+</mule>
+
